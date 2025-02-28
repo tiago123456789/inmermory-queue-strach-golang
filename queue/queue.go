@@ -3,6 +3,8 @@ package queue
 import (
 	"sync"
 	"time"
+
+	linkedlist "github.com/tiago123456789/inmermory-queue-strach-golang/linkedList"
 )
 
 type QueueHandler func(message interface{}) error
@@ -21,26 +23,20 @@ type IQueue interface {
 
 type Queue struct {
 	mu         sync.Mutex
-	data       []interface{}
+	data       linkedlist.LinkedList
 	consumers  []Consumer
 	dataFailed chan interface{}
 }
 
 func New() *Queue {
 	return &Queue{
-		data:       []interface{}{},
+		data:       *linkedlist.NewLinkedList(),
 		dataFailed: make(chan interface{}),
 	}
 }
 
-func (q *Queue) getMessage() interface{} {
-	message := q.data[0]
-	q.data = q.data[1:]
-	return message
-}
-
 func (q *Queue) requeue(message interface{}) {
-	q.data = append(q.data, message)
+	q.data.Add(message)
 }
 
 func (q *Queue) notifyConsumer(message interface{}) bool {
@@ -63,10 +59,7 @@ func (q *Queue) notifyConsumer(message interface{}) bool {
 }
 
 func (q *Queue) Publish(message interface{}) {
-	hasConsumedMessage := q.notifyConsumer(message)
-	if hasConsumedMessage == false {
-		q.data = append(q.data, message)
-	}
+	q.data.Add(message)
 }
 
 func (q *Queue) AddHandler(callback QueueHandler) {
@@ -116,8 +109,7 @@ func (q *Queue) Start() *sync.WaitGroup {
 			select {
 			case <-ticker.C:
 				q.mu.Lock()
-				if len(q.data) > 0 {
-					message := q.getMessage()
+				if message := q.data.Get(); message != nil {
 					hasConsumed := q.notifyConsumer(message)
 					if hasConsumed == false {
 						q.requeue(message)
